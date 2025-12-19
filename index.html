@@ -75,18 +75,28 @@
         const auth = getAuth(app);
         const db = getFirestore(app);
         
-        const START_TIME = "08:00";
-        const END_TIME = "17:00";
+        // กำหนดระยะห่างแต่ละรอบ
         const INTERVAL_MINUTES = 5;
 
+        // ฟังก์ชันสร้างช่วงเวลาแบบกำหนดหลายช่วง (Multiple Ranges)
         const generateTimeSlots = () => {
             const slots = [];
-            let current = new Date(`2024-01-01T${START_TIME}:00`);
-            const end = new Date(`2024-01-01T${END_TIME}:00`);
-            while (current < end) {
-                slots.push(current.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false }));
-                current.setMinutes(current.getMinutes() + INTERVAL_MINUTES);
-            }
+            // กำหนดช่วงเวลาที่ต้องการเปิดจองที่นี่
+            const ranges = [
+                { start: "11:30", end: "12:30" },
+                { start: "15:30", end: "17:00" }
+            ];
+
+            ranges.forEach(range => {
+                let current = new Date(`2024-01-01T${range.start}:00`);
+                const end = new Date(`2024-01-01T${range.end}:00`);
+
+                while (current < end) {
+                    slots.push(current.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false }));
+                    current.setMinutes(current.getMinutes() + INTERVAL_MINUTES);
+                }
+            });
+            
             return slots;
         };
 
@@ -283,7 +293,7 @@
                             {/* Right Column: Time Slots */}
                             <div className="lg:col-span-8">
                                 <h2 className="text-lg font-semibold mb-3 flex items-center gap-2 text-indigo-900 sticky top-[70px] lg:static bg-white z-20 py-2 lg:py-0">
-                                    <Calendar className="w-5 h-5 text-indigo-600" /> ตารางเวลา (08:00 - 17:00)
+                                    <Calendar className="w-5 h-5 text-indigo-600" /> ตารางเวลา (11:30-12:30 และ 15:30-17:00)
                                 </h2>
                                 
                                 {/* Scrollable Container */}
