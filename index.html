@@ -2,263 +2,348 @@
 <html lang="th">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Queue System</title>
 
-<!-- Excel Export -->
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
 <style>
 :root {
---glass: rgba(255,255,255,.65);
---primary:#007aff;
+    --glass: rgba(255,255,255,.65);
+    --primary:#007aff;
 }
 body {
-margin:0;
-font-family:-apple-system,BlinkMacSystemFont,sans-serif;
-background:linear-gradient(135deg,#dfe9f3,#fff);
+    margin:0;
+    font-family:-apple-system,BlinkMacSystemFont,sans-serif;
+    background:linear-gradient(135deg,#dfe9f3,#fff);
+    min-height: 100vh;
 }
 .container {
-max-width:1200px;
-margin:40px auto;
-padding:25px;
-background:var(--glass);
-backdrop-filter:blur(20px);
-border-radius:22px;
-box-shadow:0 20px 40px rgba(0,0,0,.15);
+    max-width:1200px;
+    margin:40px auto;
+    padding:25px;
+    background:var(--glass);
+    backdrop-filter:blur(20px);
+    border-radius:22px;
+    box-shadow:0 20px 40px rgba(0,0,0,.15);
 }
 input,select,button {
-width:100%;
-padding:12px;
-border-radius:12px;
-border:1px solid #ddd;
-margin:6px 0;
+    width:100%;
+    padding:12px;
+    box-sizing: border-box; /* Fix layout shift */
+    border-radius:12px;
+    border:1px solid #ddd;
+    margin:6px 0;
 }
 button {
-background:var(--primary);
-color:#fff;
-border:none;
-cursor:pointer;
+    background:var(--primary);
+    color:#fff;
+    border:none;
+    cursor:pointer;
+    font-weight: bold;
 }
+button:hover { opacity: 0.9; }
 button.danger { background:#ff3b30; }
 table {
-width:100%;
-border-collapse:collapse;
-margin-top:10px;
+    width:100%;
+    border-collapse:collapse;
+    margin-top:10px;
 }
 th,td {
-padding:10px;
-border-bottom:1px solid #eee;
-text-align:center;
+    padding:10px;
+    border-bottom:1px solid #eee;
+    text-align:center;
 }
 .glass {
-background:rgba(255,255,255,.7);
-border-radius:16px;
-padding:15px;
-margin:10px 0;
+    background:rgba(255,255,255,.7);
+    border-radius:16px;
+    padding:15px;
+    margin:10px 0;
 }
 .admin-only { display:none; }
-.highlight {
-background:#ffeeba !important;
-animation: blink 1s infinite;
-}
-@keyframes blink {
-50% { background:#fff3cd; }
-}
 .alert {
-background:#007aff;
-color:#fff;
-padding:15px;
-border-radius:14px;
-text-align:center;
-font-size:20px;
-display:none;
-margin-bottom:15px;
+    background:#007aff;
+    color:#fff;
+    padding:15px;
+    border-radius:14px;
+    text-align:center;
+    font-size:20px;
+    display:none;
+    margin-bottom:15px;
+    box-shadow: 0 4px 12px rgba(0,122,255,0.3);
 }
 </style>
 </head>
 
 <body>
 <div class="container">
-<h1>🪜 ระบบจองคิวการใช้งานบันได</h1>
+    <h1>🪜 ระบบจองคิวการใช้งานบันได</h1>
 
-<div class="alert" id="notifyBox"></div>
+    <div class="alert" id="notifyBox"></div>
 
-<div class="glass">
-<h2>ผู้ใช้งาน</h2>
-<input id="name" placeholder="ชื่อ">
-<input id="email" placeholder="Email">
-<select id="department"></select>
-<input type="date" id="queueDate">
-<button id="addQueue">จองคิว</button>
-</div>
+    <div class="glass">
+        <h2>ผู้ใช้งาน</h2>
+        <input id="name" placeholder="ชื่อ - นามสกุล">
+        <input id="email" placeholder="Email">
+        <select id="department"></select>
+        <input type="date" id="queueDate">
+        <button id="addQueue">จองคิว</button>
+    </div>
 
-<div class="glass admin-only">
-<h2>📈 Export</h2>
-<button onclick="exportCSV()">Export CSV</button>
-<button onclick="exportExcel()">Export Excel</button>
-<button class="danger" onclick="callNext()">🔔 เรียกคิวถัดไป</button>
-</div>
+    <div class="glass admin-only">
+        <h2>📈 Export & Control</h2>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <button onclick="exportCSV()">Export CSV</button>
+            <button onclick="exportExcel()">Export Excel</button>
+        </div>
+        <button class="danger" onclick="callNext()" style="margin-top:10px;">🔔 เรียกคิวถัดไป</button>
+    </div>
 
-<div class="glass">
-<h2>📋 Queue</h2>
-<table>
-<thead>
-<tr>
-<th>#</th><th>ชื่อ</th><th>Email</th><th>แผนก</th><th>เวลา</th><th class="admin-only">จัดการ</th>
-</tr>
-</thead>
-<tbody id="queueTable"></tbody>
-</table>
-</div>
+    <div class="glass">
+        <h2>📋 Queue List</h2>
+        <div style="overflow-x: auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>#</th><th>ชื่อ</th><th>แผนก</th><th>เวลา</th><th class="admin-only">จัดการ</th>
+                    </tr>
+                </thead>
+                <tbody id="queueTable"></tbody>
+            </table>
+        </div>
+    </div>
 
-<div class="glass">
-<h2>🔐 Admin</h2>
-<input type="password" id="adminPass">
-<button onclick="loginAdmin()">Login</button>
-</div>
+    <div class="glass">
+        <h2>🔐 Admin Access</h2>
+        <input type="password" id="adminPass" placeholder="Password">
+        <button onclick="loginAdmin()">Login</button>
+    </div>
 </div>
 
 <script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-import {
-getFirestore, collection, addDoc, deleteDoc, doc,
-query, where, orderBy, onSnapshot, getDocs, setDoc, serverTimestamp
-} from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+    import {
+        getFirestore, collection, addDoc, deleteDoc, doc,
+        query, where, orderBy, onSnapshot, getDocs, setDoc, serverTimestamp
+    } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
 
-const firebaseConfig = {
-apiKey:"AIzaSyBWDvn67-_uW-OagSezI16kjbANVa4yAJI",
-authDomain:"my-queue-system-5b1d6.firebaseapp.com",
-projectId:"my-queue-system-5b1d6",
-storageBucket:"my-queue-system-5b1d6.firebasestorage.app",
-messagingSenderId:"57979958638",
-appId:"1:57979958638:web:82d71cc5654f304764fd7f"
-};
+    // ─────────────────────────────────────────────────────────────
+    // ⚠️ CONFIGURATION REQUIRED
+    // นำค่า Config จาก Firebase Console -> Project Settings มาใส่ที่นี่
+    // ─────────────────────────────────────────────────────────────
+    const firebaseConfig = {
+        apiKey: "YOUR_API_KEY",
+        authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+        projectId: "YOUR_PROJECT_ID",
+        storageBucket: "YOUR_PROJECT_ID.firebasestorage.app",
+        messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+        appId: "YOUR_APP_ID"
+    };
 
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
 
-const ADMIN_PASSWORD = "admin123";
-let isAdmin = false;
-let currentSnapshot = [];
+    const ADMIN_PASSWORD = "admin123"; // ⚠️ Not Secure for Production
+    let currentSnapshot = [];
+    let unsubscribe = null; // Store listener to detach later
 
-const departments = [
-"Editorial G1","Editorial G6","Editorial G10","Editorial G14","Editorial G15",
-"Editorial G16","Editorial G2","Editorial G8","Editorial G12","Editorial G17",
-"Editorial G4","Editorial G11","Editorial G3","Editorial G5","Editorial G7",
-"Editorial G18","Editorial G9","Editorial G13",
-"Production G1","Production G2","Production G3","Production G4","Production G5","Production G6",
-"Admin","IT","Finance","HR","Conference","Design","Training","Proceedings","Public Service"
-];
-department.innerHTML = departments.map(d=>`<option>${d}</option>`).join("");
-queueDate.valueAsDate = new Date();
+    // Departments Setup
+    const departments = [
+        "Editorial G1","Editorial G6","Editorial G10","Editorial G14","Editorial G15",
+        "Editorial G16","Editorial G2","Editorial G8","Editorial G12","Editorial G17",
+        "Editorial G4","Editorial G11","Editorial G3","Editorial G5","Editorial G7",
+        "Editorial G18","Editorial G9","Editorial G13",
+        "Production G1","Production G2","Production G3","Production G4","Production G5","Production G6",
+        "Admin","IT","Finance","HR","Conference","Design","Training","Proceedings","Public Service"
+    ];
+    
+    const deptSelect = document.getElementById("department");
+    deptSelect.innerHTML = departments.map(d => `<option>${d}</option>`).join("");
+    
+    const qDateInput = document.getElementById("queueDate");
+    qDateInput.valueAsDate = new Date();
 
-/* -------- Add Queue (block email duplicate) -------- */
-addQueue.onclick = async () => {
-const q = query(
-collection(db,"queues"),
-where("email","==",email.value),
-where("date","==",queueDate.value)
-);
-if(!(await getDocs(q)).empty){
-alert("Email นี้จองวันนี้แล้ว");
-return;
-}
-await addDoc(collection(db,"queues"),{
-name:name.value,
-email:email.value,
-department:department.value,
-date:queueDate.value,
-createdAt:serverTimestamp()
-});
-};
+    /* -------- Add Queue Logic -------- */
+    document.getElementById("addQueue").onclick = async () => {
+        const nameVal = document.getElementById("name").value;
+        const emailVal = document.getElementById("email").value;
+        const deptVal = deptSelect.value;
+        const dateVal = qDateInput.value;
 
-/* -------- Render Queue -------- */
-const render = snap => {
-currentSnapshot = snap.docs;
-queueTable.innerHTML="";
-let i=1;
-snap.forEach(d=>{
-const q=d.data();
-queueTable.innerHTML+=`
-<tr id="${d.id}">
-<td>${i++}</td>
-<td>${q.name}</td>
-<td>${q.email}</td>
-<td>${q.department}</td>
-<td>${q.createdAt?.toDate().toLocaleTimeString()||""}</td>
-<td class="admin-only">
-<button class="danger" onclick="deleteQ('${d.id}')">❌</button>
-</td>
-</tr>`;
-});
-};
+        if(!nameVal || !emailVal) return alert("กรุณากรอกข้อมูลให้ครบถ้วน");
 
-/* -------- Realtime Listener -------- */
-onSnapshot(
-query(
-collection(db,"queues"),
-where("date","==",queueDate.value),
-orderBy("createdAt","asc")
-),
-render
-);
+        try {
+            // Check Duplicate
+            const q = query(
+                collection(db,"queues"),
+                where("email","==", emailVal),
+                where("date","==", dateVal)
+            );
+            
+            const snapshot = await getDocs(q);
+            if(!snapshot.empty){
+                alert("Email นี้ได้ทำการจองในวันที่เลือกไปแล้ว");
+                return;
+            }
 
-/* -------- Admin -------- */
-window.loginAdmin=()=>{
-if(adminPass.value===ADMIN_PASSWORD){
-isAdmin=true;
-document.querySelectorAll(".admin-only").forEach(e=>e.style.display="block");
-}
-};
+            await addDoc(collection(db,"queues"),{
+                name: nameVal,
+                email: emailVal,
+                department: deptVal,
+                date: dateVal,
+                createdAt: serverTimestamp()
+            });
+            
+            alert("จองคิวสำเร็จ!");
+            document.getElementById("name").value = "";
+            document.getElementById("email").value = "";
+        } catch (error) {
+            console.error(error);
+            alert("เกิดข้อผิดพลาด: " + error.message);
+        }
+    };
 
-window.deleteQ=async id=>{
-if(confirm("ลบคิวนี้?")) await deleteDoc(doc(db,"queues",id));
-};
+    /* -------- Realtime Listener Management -------- */
+    const subscribeQueue = () => {
+        // Unsubscribe old listener if exists
+        if(unsubscribe) unsubscribe();
 
-/* -------- Export -------- */
-window.exportCSV=()=>{
-let csv="Name,Email,Department,Time\n";
-currentSnapshot.forEach(d=>{
-const q=d.data();
-csv+=`${q.name},${q.email},${q.department},${q.createdAt?.toDate()}\n`;
-});
-download(csv,"queue.csv","text/csv");
-};
+        const q = query(
+            collection(db,"queues"),
+            where("date","==", qDateInput.value),
+            orderBy("createdAt","asc")
+        );
 
-window.exportExcel=()=>{
-const data=currentSnapshot.map(d=>d.data());
-const ws=XLSX.utils.json_to_sheet(data);
-const wb=XLSX.utils.book_new();
-XLSX.utils.book_append_sheet(wb,ws,"Queue");
-XLSX.writeFile(wb,"queue.xlsx");
-};
+        unsubscribe = onSnapshot(q, (snap) => {
+            currentSnapshot = snap.docs;
+            const tbody = document.getElementById("queueTable");
+            tbody.innerHTML = "";
+            
+            if(snap.empty) {
+                tbody.innerHTML = "<tr><td colspan='5'>ไม่พบข้อมูลคิวในวันนี้</td></tr>";
+                return;
+            }
 
-function download(content,file,type){
-const a=document.createElement("a");
-a.href=URL.createObjectURL(new Blob([content],{type}));
-a.download=file;
-a.click();
-}
+            let i = 1;
+            snap.forEach(d => {
+                const qData = d.data();
+                const timeStr = qData.createdAt ? qData.createdAt.toDate().toLocaleTimeString('th-TH') : "Pending...";
+                
+                tbody.innerHTML += `
+                <tr id="${d.id}">
+                    <td>${i++}</td>
+                    <td>${qData.name}</td>
+                    <td>${qData.department}</td>
+                    <td>${timeStr}</td>
+                    <td class="admin-only" style="${isAdmin ? 'display:block' : ''}">
+                        <button class="danger" onclick="deleteQ('${d.id}')">❌</button>
+                    </td>
+                </tr>`;
+            });
+            // Re-apply admin view if logged in
+            if(isAdmin) document.querySelectorAll(".admin-only").forEach(e => e.style.display = "block");
+        });
+    };
 
-/* -------- Call Next Queue -------- */
-window.callNext=async ()=>{
-if(!currentSnapshot.length)return alert("ไม่มีคิว");
-const first=currentSnapshot[0];
-await setDoc(doc(db,"notifications","current"),{
-...first.data(),
-calledAt:serverTimestamp()
-});
-await deleteDoc(first.ref);
-};
+    // Initial Subscription
+    subscribeQueue();
 
-/* -------- Notification Listener -------- */
-onSnapshot(doc(db,"notifications","current"),snap=>{
-if(!snap.exists())return;
-const d=snap.data();
-notifyBox.style.display="block";
-notifyBox.innerText=`🔔 เรียกคิว: ${d.name} (${d.department})`;
-setTimeout(()=>notifyBox.style.display="none",8000);
-});
+    // Re-subscribe on date change
+    qDateInput.onchange = subscribeQueue;
+
+    /* -------- Admin Logic -------- */
+    let isAdmin = false;
+    window.loginAdmin = () => {
+        const pass = document.getElementById("adminPass").value;
+        if(pass === ADMIN_PASSWORD){
+            isAdmin = true;
+            document.querySelectorAll(".admin-only").forEach(e => e.style.display = "block");
+            // Refresh table to show delete buttons
+            subscribeQueue();
+        } else {
+            alert("รหัสผ่านไม่ถูกต้อง");
+        }
+    };
+
+    window.deleteQ = async (id) => {
+        if(confirm("ยืนยันการลบคิวนี้?")) {
+            await deleteDoc(doc(db, "queues", id));
+        }
+    };
+
+    /* -------- Exports -------- */
+    window.exportCSV = () => {
+        let csv = "\uFEFFName,Email,Department,Time,Date\n"; // BOM for Thai support
+        currentSnapshot.forEach(d => {
+            const q = d.data();
+            const time = q.createdAt ? q.createdAt.toDate().toLocaleTimeString() : "";
+            csv += `"${q.name}","${q.email}","${q.department}","${time}","${q.date}"\n`;
+        });
+        download(csv, `queue_${qDateInput.value}.csv`, "text/csv;charset=utf-8");
+    };
+
+    window.exportExcel = () => {
+        const data = currentSnapshot.map(d => {
+            const q = d.data();
+            return {
+                Name: q.name,
+                Email: q.email,
+                Department: q.department,
+                Date: q.date,
+                Time: q.createdAt ? q.createdAt.toDate().toLocaleTimeString() : ""
+            };
+        });
+        const ws = XLSX.utils.json_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Queue");
+        XLSX.writeFile(wb, `queue_${qDateInput.value}.xlsx`);
+    };
+
+    function download(content, file, type){
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(new Blob([content], {type}));
+        a.download = file;
+        a.click();
+    }
+
+    /* -------- Call Next Queue -------- */
+    window.callNext = async () => {
+        if(!currentSnapshot.length) return alert("ไม่มีคิวให้เรียก");
+        const first = currentSnapshot[0];
+        
+        try {
+            // Update notification collection
+            await setDoc(doc(db,"notifications","current"), {
+                ...first.data(),
+                calledAt: serverTimestamp()
+            });
+            // Remove from queue
+            await deleteDoc(first.ref);
+        } catch(e) {
+            console.error(e);
+            alert("Error: " + e.message);
+        }
+    };
+
+    /* -------- Notification Listener -------- */
+    onSnapshot(doc(db,"notifications","current"), snap => {
+        if(!snap.exists()) return;
+        const d = snap.data();
+        const box = document.getElementById("notifyBox");
+        
+        // Show only if recently called (optional logic could be added here)
+        box.style.display = "block";
+        box.innerText = `🔔 ขอเชิญคุณ: ${d.name} (${d.department})`;
+        box.classList.add("highlight");
+        
+        // Sound Alert (Optional)
+        // new Audio('notification.mp3').play().catch(()=>{});
+
+        setTimeout(() => {
+            box.style.display = "none";
+            box.classList.remove("highlight");
+        }, 10000);
+    });
 </script>
 </body>
 </html>
