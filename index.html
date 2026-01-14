@@ -12,6 +12,7 @@
     --glass: rgba(255,255,255,0.95);
     --primary: #007aff;
     --danger: #ff3b30;
+    --disabled: #8e8e93;
     --bg-gradient: linear-gradient(135deg, #a1c4fd 0%, #c2e9fb 100%);
 }
 body {
@@ -55,7 +56,12 @@ button {
     text-transform: uppercase;
     transition: 0.2s;
 }
-button:hover { filter: brightness(1.1); }
+button:hover:not(:disabled) { filter: brightness(1.1); }
+button:disabled {
+    background: var(--disabled);
+    cursor: not-allowed;
+    opacity: 0.7;
+}
 button.danger { background: var(--danger); }
 
 /* Table */
@@ -91,9 +97,13 @@ td { padding: 12px; border-bottom: 1px solid #eee; }
 
 <body>
 <div class="container">
-    <h1>MDPI Queue System</h1>
+    <h1>🪜 MDPI Queue System</h1>
+    <div style="font-size: 0.9em; color: #666; margin-bottom: 20px;">
+        📅 เปิดจอง: 14 - 23 ม.ค. 2026 | ⏰ ระบบเปิด: 14 ม.ค. (13:00) - 26 ม.ค. (18:00)
+    </div>
 
     <div class="alert" id="notifyBox"></div>
+    <div class="alert" id="systemStatusBox" style="background: #ff3b30; display:none;"></div>
 
     <div class="glass">
         <h2>📝 จองคิวใช้งานบันได</h2>
@@ -148,7 +158,6 @@ td { padding: 12px; border-bottom: 1px solid #eee; }
 </div>
 
 <script type="module">
-    // Import SDKs from CDN for Client-Side usage
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
     import { getAnalytics } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-analytics.js";
     import {
@@ -156,9 +165,7 @@ td { padding: 12px; border-bottom: 1px solid #eee; }
         query, where, orderBy, onSnapshot, getDocs, setDoc, serverTimestamp
     } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
 
-    // ─────────────────────────────────────────────────────────────
-    // ✅ PRODUCTION CONFIGURATION (INJECTED)
-    // ─────────────────────────────────────────────────────────────
+    // ✅ CONFIGURATION
     const firebaseConfig = {
         apiKey: "AIzaSyBWDvn67-_uW-OagSezI16kjbANVa4yAJI",
         authDomain: "my-queue-system-5b1d6.firebaseapp.com",
@@ -169,20 +176,30 @@ td { padding: 12px; border-bottom: 1px solid #eee; }
         measurementId: "G-WNP7J2F96C"
     };
 
-    // Initialize Firebase
     const app = initializeApp(firebaseConfig);
     const analytics = getAnalytics(app);
     const db = getFirestore(app);
 
-    // --- SYSTEM SETTINGS ---
+    // --- SYSTEM POLICIES ---
     const ADMIN_PASSWORD = "Mdpi@dm1n1996"; 
     
-    const locations = [
-        "Tower A ชั้น 22",
-        "Tower B ชั้น 26",
-        "Tower B ชั้น 27"
+    // 1. Time Slots Update
+    const timeSlots = [
+        "12:00 - 12:30", 
+        "15:00 - 15:20", 
+        "16:30 - 17:00", 
+        "17:00 - 17:30"
     ];
-    const timeSlots = ["11:30 - 12:00", "12:00 - 12:30", "15:00 - 15:30", "16:30 - 17:00"];
+
+    // 2. Booking Date Range Policy (YYYY-MM-DD)
+    const ALLOWED_DATE_START = "2026-01-14";
+    const ALLOWED_DATE_END = "2026-01-23";
+
+    // 3. System Access Window (Date Object)
+    const SYSTEM_OPEN_TIME = new Date("2026-01-14T13:00:00");
+    const SYSTEM_CLOSE_TIME = new Date("2026-01-26T18:00:00");
+
+    const locations = ["Tower A ชั้น 22", "Tower B ชั้น 26", "Tower B ชั้น 27"];
     const departments = [
         "Editorial G1","Editorial G6","Editorial G10","Editorial G14","Editorial G15",
         "Editorial G16","Editorial G2","Editorial G8","Editorial G12","Editorial G17",
@@ -197,15 +214,47 @@ td { padding: 12px; border-bottom: 1px solid #eee; }
     document.getElementById("location").innerHTML += locations.map(l => `<option value="${l}">${l}</option>`).join("");
     document.getElementById("timeSlot").innerHTML += timeSlots.map(t => `<option value="${t}">${t}</option>`).join("");
     
+    // Set Date Picker Constraints
     const qDateInput = document.getElementById("queueDate");
-    qDateInput.valueAsDate = new Date();
+    qDateInput.min = ALLOWED_DATE_START;
+    qDateInput.max = ALLOWED_DATE_END;
+    qDateInput.value = ALLOWED_DATE_START; // Default to first available day
 
     let currentSnapshot = [];
     let unsubscribe = null;
     let isAdmin = false;
 
+    // --- ACCESS CONTROL CHECKER ---
+    function checkSystemStatus() {
+        if (isAdmin) return true; // Admin Bypass
+
+        const now = new Date();
+        const btn = document.getElementById("addQueue");
+        const statusBox = document.getElementById("systemStatusBox");
+
+        if (now < SYSTEM_OPEN_TIME || now > SYSTEM_CLOSE_TIME) {
+            btn.disabled = true;
+            btn.innerText = "⛔ ปิดระบบชั่วคราว";
+            statusBox.style.display = "block";
+            statusBox.innerText = `⛔ ระบบปิดให้บริการ (เปิดใช้งาน 14/01/26 13:00 - 26/01/26 18:00)`;
+            return false;
+        } else {
+            btn.disabled = false;
+            btn.innerText = "ยืนยันการจอง";
+            statusBox.style.display = "none";
+            return true;
+        }
+    }
+
+    // Run check on load
+    checkSystemStatus();
+    // Re-check every minute
+    setInterval(checkSystemStatus, 60000);
+
     // --- CORE LOGIC: BOOKING ---
     document.getElementById("addQueue").onclick = async () => {
+        if (!checkSystemStatus()) return; // Double check
+
         const name = document.getElementById("name").value.trim();
         const email = document.getElementById("email").value.trim();
         const dept = document.getElementById("department").value;
@@ -213,7 +262,13 @@ td { padding: 12px; border-bottom: 1px solid #eee; }
         const time = document.getElementById("timeSlot").value;
         const date = qDateInput.value;
 
+        // Validation: Required Fields
         if(!name || !email || !loc || !time || !date) return alert("กรุณากรอกข้อมูลให้ครบถ้วน");
+
+        // Validation: Date Range (Client Side Enforcement)
+        if(date < ALLOWED_DATE_START || date > ALLOWED_DATE_END) {
+            return alert(`❌ วันที่เลือกไม่อยู่ในช่วงที่กำหนด (${ALLOWED_DATE_START} ถึง ${ALLOWED_DATE_END})`);
+        }
 
         const btn = document.getElementById("addQueue");
         btn.disabled = true;
@@ -222,7 +277,7 @@ td { padding: 12px; border-bottom: 1px solid #eee; }
         try {
             const qRef = collection(db, "queues");
 
-            // 1. ตรวจสอบ: สถานที่นี้ เวลานี้ มีคนจองหรือยัง?
+            // 1. Resource Availability Check
             const roomCheck = await getDocs(query(qRef, 
                 where("date", "==", date),
                 where("location", "==", loc),
@@ -230,7 +285,7 @@ td { padding: 12px; border-bottom: 1px solid #eee; }
             ));
             if(!roomCheck.empty) throw new Error(`${loc} รอบ ${time} ถูกจองแล้ว`);
 
-            // 2. ตรวจสอบ: User คนนี้จองเวลาเดียวกันที่อื่นหรือไม่?
+            // 2. User Duplicate Check
             const userCheck = await getDocs(query(qRef,
                 where("date", "==", date),
                 where("email", "==", email),
@@ -238,7 +293,7 @@ td { padding: 12px; border-bottom: 1px solid #eee; }
             ));
             if(!userCheck.empty) throw new Error(`คุณได้จองรอบเวลา ${time} ไปแล้ว`);
 
-            // 3. บันทึกข้อมูล
+            // 3. Commit
             await addDoc(qRef, {
                 name, email, department: dept, location: loc, timeSlot: time, date,
                 createdAt: serverTimestamp()
@@ -252,17 +307,15 @@ td { padding: 12px; border-bottom: 1px solid #eee; }
             alert("❌ ไม่สามารถจองได้: " + e.message);
             console.error(e);
         } finally {
-            btn.disabled = false;
-            btn.innerText = "ยืนยันการจอง";
+            checkSystemStatus(); // Reset button state
         }
     };
 
-    // --- CORE LOGIC: REALTIME LISTENER ---
+    // --- REALTIME LISTENER ---
     const subscribeQueue = () => {
         if(unsubscribe) unsubscribe();
         document.getElementById("displayDate").innerText = qDateInput.value;
 
-        // Query: วันที่เลือก -> เรียงตามเวลา -> เรียงตามสถานที่
         const q = query(
             collection(db,"queues"),
             where("date","==", qDateInput.value),
@@ -295,7 +348,6 @@ td { padding: 12px; border-bottom: 1px solid #eee; }
             if(isAdmin) document.querySelectorAll(".admin-only").forEach(e => e.style.display = "block");
         }, (error) => {
             console.error("Firestore Error:", error);
-            // แจ้งเตือนเมื่อ Index หาย (กรณี Query ซับซ้อนครั้งแรก)
             if(error.code === 'failed-precondition') {
                 alert("System Notice: กรุณาเปิด Console (F12) และคลิกลิงก์เพื่อสร้าง Index ใน Firebase");
             }
@@ -311,8 +363,12 @@ td { padding: 12px; border-bottom: 1px solid #eee; }
         if(inputPass === ADMIN_PASSWORD){
             isAdmin = true;
             document.querySelectorAll(".admin-only").forEach(e => e.style.display = "block");
-            subscribeQueue(); // Re-render table to show delete buttons
-            alert("Login สำเร็จ: เข้าสู่โหมดผู้ดูแลระบบ");
+            
+            // Re-run status check to unlock button for admin
+            checkSystemStatus();
+            
+            subscribeQueue(); 
+            alert("Login สำเร็จ: เข้าสู่โหมดผู้ดูแลระบบ (System Override Active)");
         } else {
             alert("รหัสผ่านไม่ถูกต้อง");
         }
@@ -353,26 +409,16 @@ td { padding: 12px; border-bottom: 1px solid #eee; }
     window.callNext = async () => {
         if(!currentSnapshot.length) return alert("ไม่มีคิวในระบบ");
         const first = currentSnapshot[0].data();
-        
-        // บันทึกลง Notification Collection
-        await setDoc(doc(db,"notifications","current"), {
-            ...first,
-            calledAt: serverTimestamp()
-        });
-        
-        // ลบคิวที่ถูกเรียกแล้ว (Logic: Called = Completed/Removed)
+        await setDoc(doc(db,"notifications","current"), { ...first, calledAt: serverTimestamp() });
         await deleteDoc(currentSnapshot[0].ref);
     };
 
-    // Notification Listener (แสดงผล Popup)
     onSnapshot(doc(db,"notifications","current"), snap => {
         if(!snap.exists()) return;
         const d = snap.data();
         const box = document.getElementById("notifyBox");
         box.style.display = "block";
         box.innerHTML = `🔔 <b>ขอเชิญคุณ ${d.name}</b><br>📍 ${d.location} | ⏰ ${d.timeSlot}`;
-        
-        // Auto hide after 10 seconds
         setTimeout(() => box.style.display = "none", 10000);
     });
 </script>
