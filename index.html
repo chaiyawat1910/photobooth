@@ -1,171 +1,264 @@
 <!DOCTYPE html>
 <html lang="th">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>ระบบจองการใช้บันได</title>
+<meta charset="UTF-8">
+<title>Queue System</title>
 
-<script src="https://cdn.tailwindcss.com"></script>
+<!-- Excel Export -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
-<script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@18.2.0",
-    "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
-    "firebase/app": "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js",
-    "firebase/auth": "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js",
-    "firebase/firestore": "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js",
-    "lucide-react": "https://esm.sh/lucide-react@0.294.0"
-  }
+<style>
+:root {
+--glass: rgba(255,255,255,.65);
+--primary:#007aff;
 }
-</script>
-
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+body {
+margin:0;
+font-family:-apple-system,BlinkMacSystemFont,sans-serif;
+background:linear-gradient(135deg,#dfe9f3,#fff);
+}
+.container {
+max-width:1200px;
+margin:40px auto;
+padding:25px;
+background:var(--glass);
+backdrop-filter:blur(20px);
+border-radius:22px;
+box-shadow:0 20px 40px rgba(0,0,0,.15);
+}
+input,select,button {
+width:100%;
+padding:12px;
+border-radius:12px;
+border:1px solid #ddd;
+margin:6px 0;
+}
+button {
+background:var(--primary);
+color:#fff;
+border:none;
+cursor:pointer;
+}
+button.danger { background:#ff3b30; }
+table {
+width:100%;
+border-collapse:collapse;
+margin-top:10px;
+}
+th,td {
+padding:10px;
+border-bottom:1px solid #eee;
+text-align:center;
+}
+.glass {
+background:rgba(255,255,255,.7);
+border-radius:16px;
+padding:15px;
+margin:10px 0;
+}
+.admin-only { display:none; }
+.highlight {
+background:#ffeeba !important;
+animation: blink 1s infinite;
+}
+@keyframes blink {
+50% { background:#fff3cd; }
+}
+.alert {
+background:#007aff;
+color:#fff;
+padding:15px;
+border-radius:14px;
+text-align:center;
+font-size:20px;
+display:none;
+margin-bottom:15px;
+}
+</style>
 </head>
 
-<body class="bg-slate-100">
-<div id="root"></div>
+<body>
+<div class="container">
+<h1>🪜 ระบบจองคิวการใช้งานบันได</h1>
 
-<script type="text/babel" data-type="module">
-import React, { useState, useEffect } from "react";
-import { createRoot } from "react-dom/client";
-import { initializeApp } from "firebase/app";
-import { getAuth, signInAnonymously } from "firebase/auth";
+<div class="alert" id="notifyBox"></div>
+
+<div class="glass">
+<h2>ผู้ใช้งาน</h2>
+<input id="name" placeholder="ชื่อ">
+<input id="email" placeholder="Email">
+<select id="department"></select>
+<input type="date" id="queueDate">
+<button id="addQueue">จองคิว</button>
+</div>
+
+<div class="glass admin-only">
+<h2>📈 Export</h2>
+<button onclick="exportCSV()">Export CSV</button>
+<button onclick="exportExcel()">Export Excel</button>
+<button class="danger" onclick="callNext()">🔔 เรียกคิวถัดไป</button>
+</div>
+
+<div class="glass">
+<h2>📋 Queue</h2>
+<table>
+<thead>
+<tr>
+<th>#</th><th>ชื่อ</th><th>Email</th><th>แผนก</th><th>เวลา</th><th class="admin-only">จัดการ</th>
+</tr>
+</thead>
+<tbody id="queueTable"></tbody>
+</table>
+</div>
+
+<div class="glass">
+<h2>🔐 Admin</h2>
+<input type="password" id="adminPass">
+<button onclick="loginAdmin()">Login</button>
+</div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import {
-  getFirestore, collection, doc,
-  setDoc, getDoc, onSnapshot, deleteDoc
-} from "firebase/firestore";
-import { Clock, Calendar, Building2, User, Users, CheckCircle, AlertCircle } from "lucide-react";
+getFirestore, collection, addDoc, deleteDoc, doc,
+query, where, orderBy, onSnapshot, getDocs, setDoc, serverTimestamp
+} from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
 
-/* 🔧 Firebase Config */
 const firebaseConfig = {
-  apiKey: "AIzaSyBWDvn67-_uW-OagSezI16kjbANVa4yAJI",
-  authDomain: "my-queue-system-5b1d6.firebaseapp.com",
-  projectId: "my-queue-system-5b1d6"
+apiKey:"AIzaSyBWDvn67-_uW-OagSezI16kjbANVa4yAJI",
+authDomain:"my-queue-system-5b1d6.firebaseapp.com",
+projectId:"my-queue-system-5b1d6",
+storageBucket:"my-queue-system-5b1d6.firebasestorage.app",
+messagingSenderId:"57979958638",
+appId:"1:57979958638:web:82d71cc5654f304764fd7f"
 };
 
 const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
 const db = getFirestore(app);
-const COLLECTION = "stair_bookings";
 
-/* ⏱️ เวลา 30 นาที */
-const INTERVAL = 30;
-const generateSlots = () => {
-  const ranges = [
-    ["09:00","12:00"],
-    ["13:00","17:00"]
-  ];
-  const slots = [];
-  ranges.forEach(([s,e])=>{
-    let cur = new Date(`2024-01-01T${s}`);
-    const end = new Date(`2024-01-01T${e}`);
-    while(cur < end){
-      slots.push(cur.toTimeString().slice(0,5));
-      cur.setMinutes(cur.getMinutes()+INTERVAL);
-    }
-  });
-  return slots;
+const ADMIN_PASSWORD = "admin123";
+let isAdmin = false;
+let currentSnapshot = [];
+
+const departments = [
+"Editorial G1","Editorial G6","Editorial G10","Editorial G14","Editorial G15",
+"Editorial G16","Editorial G2","Editorial G8","Editorial G12","Editorial G17",
+"Editorial G4","Editorial G11","Editorial G3","Editorial G5","Editorial G7",
+"Editorial G18","Editorial G9","Editorial G13",
+"Production G1","Production G2","Production G3","Production G4","Production G5","Production G6",
+"Admin","IT","Finance","HR","Conference","Design","Training","Proceedings","Public Service"
+];
+department.innerHTML = departments.map(d=>`<option>${d}</option>`).join("");
+queueDate.valueAsDate = new Date();
+
+/* -------- Add Queue (block email duplicate) -------- */
+addQueue.onclick = async () => {
+const q = query(
+collection(db,"queues"),
+where("email","==",email.value),
+where("date","==",queueDate.value)
+);
+if(!(await getDocs(q)).empty){
+alert("Email นี้จองวันนี้แล้ว");
+return;
+}
+await addDoc(collection(db,"queues"),{
+name:name.value,
+email:email.value,
+department:department.value,
+date:queueDate.value,
+createdAt:serverTimestamp()
+});
 };
 
-function App(){
-  const [bookings,setBookings]=useState({});
-  const [date,setDate]=useState(new Date().toISOString().split("T")[0]);
-  const [tower,setTower]=useState("");
-  const [time,setTime]=useState("");
-  const [form,setForm]=useState({name:"",email:"",group:""});
-  const [msg,setMsg]=useState("");
-  const [err,setErr]=useState("");
+/* -------- Render Queue -------- */
+const render = snap => {
+currentSnapshot = snap.docs;
+queueTable.innerHTML="";
+let i=1;
+snap.forEach(d=>{
+const q=d.data();
+queueTable.innerHTML+=`
+<tr id="${d.id}">
+<td>${i++}</td>
+<td>${q.name}</td>
+<td>${q.email}</td>
+<td>${q.department}</td>
+<td>${q.createdAt?.toDate().toLocaleTimeString()||""}</td>
+<td class="admin-only">
+<button class="danger" onclick="deleteQ('${d.id}')">❌</button>
+</td>
+</tr>`;
+});
+};
 
-  const slots = generateSlots();
+/* -------- Realtime Listener -------- */
+onSnapshot(
+query(
+collection(db,"queues"),
+where("date","==",queueDate.value),
+orderBy("createdAt","asc")
+),
+render
+);
 
-  useEffect(()=>{
-    signInAnonymously(auth);
-    return onSnapshot(collection(db,COLLECTION),(snap)=>{
-      const data={};
-      snap.forEach(d=>data[d.id]=d.data());
-      setBookings(data);
-    });
-  },[]);
+/* -------- Admin -------- */
+window.loginAdmin=()=>{
+if(adminPass.value===ADMIN_PASSWORD){
+isAdmin=true;
+document.querySelectorAll(".admin-only").forEach(e=>e.style.display="block");
+}
+};
 
-  const book = async()=>{
-    setErr(""); setMsg("");
-    if(!date||!tower||!time||!form.name||!form.email||!form.group){
-      setErr("กรุณากรอกข้อมูลให้ครบ");
-      return;
-    }
-    const id = `${date}_${tower}_${time}`;
-    const ref = doc(db,COLLECTION,id);
-    const snap = await getDoc(ref);
-    if(snap.exists()){
-      setErr("ช่วงเวลานี้ถูกจองแล้ว");
-      return;
-    }
-    await setDoc(ref,{...form,date,tower,time,created:new Date().toISOString()});
-    setMsg(`จองบันได ${tower} เวลา ${time} สำเร็จ`);
-    setTime("");
-  };
+window.deleteQ=async id=>{
+if(confirm("ลบคิวนี้?")) await deleteDoc(doc(db,"queues",id));
+};
 
-  return (
-  <div className="max-w-5xl mx-auto p-6 space-y-6">
-    <h1 className="text-3xl font-bold flex gap-2">
-      <Clock/> ระบบจองการใช้บันได
-    </h1>
+/* -------- Export -------- */
+window.exportCSV=()=>{
+let csv="Name,Email,Department,Time\n";
+currentSnapshot.forEach(d=>{
+const q=d.data();
+csv+=`${q.name},${q.email},${q.department},${q.createdAt?.toDate()}\n`;
+});
+download(csv,"queue.csv","text/csv");
+};
 
-    <div className="grid md:grid-cols-3 gap-4 bg-white p-5 rounded-xl shadow">
-      <div>
-        <label>วันที่</label>
-        <input type="date" value={date}
-          onChange={e=>setDate(e.target.value)}
-          className="w-full border p-2 rounded"/>
-      </div>
+window.exportExcel=()=>{
+const data=currentSnapshot.map(d=>d.data());
+const ws=XLSX.utils.json_to_sheet(data);
+const wb=XLSX.utils.book_new();
+XLSX.utils.book_append_sheet(wb,ws,"Queue");
+XLSX.writeFile(wb,"queue.xlsx");
+};
 
-      <div>
-        <label>ตึก</label>
-        <select value={tower}
-          onChange={e=>setTower(e.target.value)}
-          className="w-full border p-2 rounded">
-          <option value="">-- เลือกตึก --</option>
-          <option>Tower A</option>
-          <option>Tower B</option>
-        </select>
-      </div>
-
-      <div>
-        <label>เวลา</label>
-        <select value={time}
-          onChange={e=>setTime(e.target.value)}
-          className="w-full border p-2 rounded">
-          <option value="">-- เลือกเวลา --</option>
-          {slots.map(t=>{
-            const id=`${date}_${tower}_${t}`;
-            return <option key={t} disabled={bookings[id]}>{t}</option>
-          })}
-        </select>
-      </div>
-    </div>
-
-    <div className="grid md:grid-cols-3 gap-4 bg-white p-5 rounded-xl shadow">
-      <input placeholder="ชื่อ" className="border p-2 rounded"
-        onChange={e=>setForm({...form,name:e.target.value})}/>
-      <input placeholder="อีเมล" className="border p-2 rounded"
-        onChange={e=>setForm({...form,email:e.target.value})}/>
-      <input placeholder="กลุ่ม" className="border p-2 rounded"
-        onChange={e=>setForm({...form,group:e.target.value})}/>
-    </div>
-
-    {err && <div className="text-red-600 flex gap-2"><AlertCircle/>{err}</div>}
-    {msg && <div className="text-green-600 flex gap-2"><CheckCircle/>{msg}</div>}
-
-    <button onClick={book}
-      className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold">
-      ยืนยันการจอง (30 นาที)
-    </button>
-  </div>
-  );
+function download(content,file,type){
+const a=document.createElement("a");
+a.href=URL.createObjectURL(new Blob([content],{type}));
+a.download=file;
+a.click();
 }
 
-createRoot(document.getElementById("root")).render(<App/>);
+/* -------- Call Next Queue -------- */
+window.callNext=async ()=>{
+if(!currentSnapshot.length)return alert("ไม่มีคิว");
+const first=currentSnapshot[0];
+await setDoc(doc(db,"notifications","current"),{
+...first.data(),
+calledAt:serverTimestamp()
+});
+await deleteDoc(first.ref);
+};
+
+/* -------- Notification Listener -------- */
+onSnapshot(doc(db,"notifications","current"),snap=>{
+if(!snap.exists())return;
+const d=snap.data();
+notifyBox.style.display="block";
+notifyBox.innerText=`🔔 เรียกคิว: ${d.name} (${d.department})`;
+setTimeout(()=>notifyBox.style.display="none",8000);
+});
 </script>
 </body>
 </html>
