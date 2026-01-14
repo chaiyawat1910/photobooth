@@ -26,7 +26,7 @@
     label { display: block; font-size: 0.85em; color: #86868b; margin-bottom: 5px; font-weight: 600; }
     input, select { width: 100%; padding: 10px; border: 1px solid #d2d2d7; border-radius: 8px; font-size: 16px; box-sizing: border-box; }
     
-    /* MATRIX GRID (The Fix) */
+    /* MATRIX GRID */
     .matrix-container { overflow-x: auto; margin-top: 20px; background: var(--card); border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); padding: 20px; }
     table.matrix { width: 100%; border-collapse: collapse; min-width: 800px; }
     table.matrix th { text-align: left; padding: 15px; background: #f5f5f7; color: #1d1d1f; font-weight: 600; border-bottom: 2px solid #e5e5ea; }
@@ -67,7 +67,7 @@
 <div class="container">
     <div class="header">
         <h1>🪜 MDPI Booking Matrix</h1>
-        <p style="color:#666">ระบบจองคิวบันได (แสดงสถานะตามจริง)</p>
+        <p style="color:#666">ระบบจองคิวบันได (Business Days Only)</p>
     </div>
 
     <div class="control-bar">
@@ -172,11 +172,29 @@
     let isAdmin = false;
     let unsubscribe = null;
 
+    // --- UTILS: DATE LOGIC ---
+    // ฟังก์ชันตรวจสอบและหาวันทำการถัดไป (ข้าม เสาร์-อาทิตย์)
+    const getNextBusinessDay = (dateStr) => {
+        const d = new Date(dateStr);
+        const day = d.getDay(); // 0=Sun, 6=Sat
+        
+        // หากเป็นวันอาทิตย์ (0) -> บวก 1 วัน (เป็นจันทร์)
+        if (day === 0) d.setDate(d.getDate() + 1);
+        // หากเป็นวันเสาร์ (6) -> บวก 2 วัน (เป็นจันทร์)
+        else if (day === 6) d.setDate(d.getDate() + 2);
+        
+        return d.toISOString().split('T')[0];
+    };
+
     // --- INIT ---
     const datePicker = document.getElementById("datePicker");
-    datePicker.value = new Date().toISOString().split('T')[0]; // Default Today
+    
+    // Default Today -> Check if Business Day
+    const todayStr = new Date().toISOString().split('T')[0];
+    datePicker.value = getNextBusinessDay(todayStr);
+
     datePicker.min = "2026-01-14";
-    datePicker.max = "2026-01-26"; // Adjusted per rule
+    datePicker.max = "2026-01-26"; 
     
     document.getElementById("inpDept").innerHTML = departments.map(d => `<option>${d}</option>`).join("");
 
@@ -185,7 +203,7 @@
         const tbody = document.getElementById("matrixBody");
         tbody.innerHTML = "";
         
-        // 1. Map Data to easy dictionary: map[time][location] = data
+        // 1. Map Data
         const map = {};
         docs.forEach(d => {
             const data = d.data();
@@ -231,9 +249,23 @@
         });
     };
 
-    // --- REALTIME LISTENER ---
+    // --- REALTIME LISTENER (Modified) ---
     const loadData = () => {
         if(unsubscribe) unsubscribe();
+
+        // VALIDATION: ห้ามเลือกเสาร์-อาทิตย์
+        const selectedDate = new Date(datePicker.value);
+        const dayOfWeek = selectedDate.getDay();
+
+        if (dayOfWeek === 0 || dayOfWeek === 6) {
+            alert("⚠️ Policy Alert:\nไม่อนุญาตให้จองนอกวันทำการ (เสาร์-อาทิตย์)\nระบบจะเปลี่ยนเป็นวันทำการถัดไปให้โดยอัตโนมัติ");
+            
+            // Auto-correct to next business day
+            datePicker.value = getNextBusinessDay(datePicker.value);
+            // Re-trigger loadData with correct date
+            return loadData(); 
+        }
+
         const date = datePicker.value;
         
         const q = query(
@@ -295,14 +327,6 @@
 
         try {
             const qRef = collection(db, "queues");
-
-            // 1. Check Availability (Prevent Collision)
-            if(mode === "create" || (mode === "edit")) { // For edit, simple logic: prevent overlapping other people
-                const qSnap = await getFirestore(app); // Just dummy, we use specific query
-                // Note: In strict mode, use getDocs(query...) to check collision again here.
-                // For this UX demo, assuming Firestore rules or UI handling is enough for now 
-                // but let's add Basic JS check from currentData
-            }
 
             if(mode === "create") {
                 await addDoc(qRef, { ...payload, createdAt: serverTimestamp() });
